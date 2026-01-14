@@ -1,0 +1,99 @@
+# GitHub Actions workflow for linting Claude skills
+# Copy to: .github/workflows/lint.yml
+#
+# Validates:
+# - Skill structure (SKILL.md, frontmatter, required fields)
+# - Python scripts (ruff)
+# - Markdown files (markdownlint)
+# - Shell scripts (shellcheck)
+
+name: Lint
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  validate-skill:
+    name: Validate Skill Structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Find and validate skills
+        run: |
+          # Find all SKILL.md files and validate their parent directories
+          find . -name "SKILL.md" -type f | while read skill_file; do
+            skill_dir=$(dirname "$skill_file")
+            echo "Validating: $skill_dir"
+            python scripts/validate_skill.py "$skill_dir" || exit 1
+          done
+
+  lint-python:
+    name: Lint Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Check Python files exist
+        id: check-python
+        run: |
+          if find . -name "*.py" -type f | grep -q .; then
+            echo "has_python=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_python=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Lint Python files
+        if: steps.check-python.outputs.has_python == 'true'
+        run: ruff check .
+
+  lint-markdown:
+    name: Lint Markdown
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint Markdown
+        uses: DavidAnson/markdownlint-cli2-action@v16
+        with:
+          globs: '**/*.md'
+          config: .markdownlint.json
+
+  lint-shell:
+    name: Lint Shell Scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check shell scripts exist
+        id: check-shell
+        run: |
+          if find . -name "*.sh" -type f | grep -q .; then
+            echo "has_shell=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_shell=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Lint shell scripts
+        if: steps.check-shell.outputs.has_shell == 'true'
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './scripts'
+          severity: warning

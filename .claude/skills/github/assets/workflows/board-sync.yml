@@ -1,0 +1,88 @@
+# GitHub Actions workflow for board sync
+# Copy to: .github/workflows/board-sync.yml
+#
+# Handles: Branch created with issue number → In Progress
+# (PR and merge transitions handled by GitHub's built-in project automation)
+#
+# Required: github-config.yaml in repo root
+# Required: Repository secret BOARD_SYNC_TOKEN with project permissions
+#   - Create at: https://github.com/settings/tokens?type=beta
+#   - Permissions: Projects (read/write)
+
+name: Board Sync
+
+on:
+  create:
+
+jobs:
+  branch-to-in-progress:
+    if: github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for config
+        id: config
+        run: |
+          if [ ! -f "github-config.yaml" ]; then
+            echo "No github-config.yaml found, skipping"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "skip=false" >> $GITHUB_OUTPUT
+
+      - name: Extract issue from branch name
+        if: steps.config.outputs.skip != 'true'
+        id: branch
+        run: |
+          BRANCH="${{ github.event.ref }}"
+          echo "Branch: $BRANCH"
+
+          # Extract issue number from branch name
+          # Supports: feature/123-description, 123-description, issue-123, fix/123
+          ISSUE=$(echo "$BRANCH" | grep -oE '(^|[^0-9])([0-9]+)' | grep -oE '[0-9]+' | head -1)
+
+          if [ -n "$ISSUE" ]; then
+            echo "issue=$ISSUE" >> $GITHUB_OUTPUT
+            echo "Found issue: #$ISSUE"
+          else
+            echo "No issue number in branch name"
+            echo "issue=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Parse config
+        if: steps.config.outputs.skip != 'true' && steps.branch.outputs.issue != ''
+        id: parse
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+          echo "project_id=$(yq -r '.project_id' github-config.yaml)" >> $GITHUB_OUTPUT
+          echo "project_number=$(yq -r '.project_number' github-config.yaml)" >> $GITHUB_OUTPUT
+          echo "status_field_id=$(yq -r '.status_field_id' github-config.yaml)" >> $GITHUB_OUTPUT
+          echo "owner=$(yq -r '.owner' github-config.yaml)" >> $GITHUB_OUTPUT
+          echo "in_progress_id=$(yq -r '.statuses.in_progress' github-config.yaml)" >> $GITHUB_OUTPUT
+
+      - name: Move to In Progress
+        if: steps.config.outputs.skip != 'true' && steps.branch.outputs.issue != ''
+        env:
+          GH_TOKEN: ${{ secrets.BOARD_SYNC_TOKEN }}
+        run: |
+          ISSUE_NUMBER=${{ steps.branch.outputs.issue }}
+          echo "Moving issue #$ISSUE_NUMBER to In Progress"
+
+          ITEM_ID=$(gh project item-list ${{ steps.parse.outputs.project_number }} \
+            --owner ${{ steps.parse.outputs.owner }} \
+            --format json | jq -r ".items[] | select(.content.number == $ISSUE_NUMBER) | .id")
+
+          if [ -n "$ITEM_ID" ] && [ "$ITEM_ID" != "null" ]; then
+            gh project item-edit \
+              --project-id ${{ steps.parse.outputs.project_id }} \
+              --id "$ITEM_ID" \
+              --field-id ${{ steps.parse.outputs.status_field_id }} \
+              --single-select-option-id ${{ steps.parse.outputs.in_progress_id }}
+            echo "Moved issue #$ISSUE_NUMBER to In Progress"
+          else
+            echo "Issue #$ISSUE_NUMBER not found on board"
+          fi

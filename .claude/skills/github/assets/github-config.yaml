@@ -1,0 +1,39 @@
+# GitHub Operations Skill - Project Configuration
+# Copy this file to your project root: github-config.yaml
+# Then fill in your project's specific values.
+
+# Repository info
+repo: "your-org/your-repo"
+owner: "your-org"
+default_base: "main"  # or "develop", "master", etc.
+
+# Project board settings
+# Run these commands to get IDs:
+#   gh project list --owner your-org
+#   gh project view PROJECT_NUMBER --owner your-org --format json --jq '.id'
+#   gh project field-list PROJECT_NUMBER --owner your-org --format json
+
+project_number: 1
+project_id: "PVT_kwDOxxxxxxxxx"
+status_field_id: "PVTSSF_xxxxxxxxx"
+
+# Status column option IDs
+# Get these from: gh project field-list PROJECT_NUMBER --owner your-org --format json
+# Look for the "Status" field and its "options" array
+statuses:
+  backlog: "option_id_for_backlog"
+  todo: "option_id_for_todo"
+  in_progress: "option_id_for_in_progress"
+  in_review: "option_id_for_in_review"
+  done: "option_id_for_done"
+
+# Optional: Additional custom fields
+# fields:
+#   priority_field_id: "PVTF_xxxxxxxxx"
+#   story_points_field_id: "PVTF_yyyyyyyyy"
+#   sprint_field_id: "PVTF_zzzzzzzzz"
+
+# Optional: Default labels for this project
+# default_labels:
+#   - "team-alpha"
+#   - "project-x"

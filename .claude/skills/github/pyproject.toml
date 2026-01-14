@@ -1,0 +1,25 @@
+[project]
+name = "github-skill"
+version = "1.0.0"
+description = "Claude Code skill for GitHub operations"
+requires-python = ">=3.9"
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+]
+ignore = [
+    "E501",  # line too long (handled by line-length)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["scripts"]
