@@ -12,6 +12,8 @@ import argparse
 import sys
 from pathlib import Path
 
+import numpy as np
+
 # Exit codes
 EXIT_SUCCESS = 0
 EXIT_INVALID_ARGS = 1
@@ -23,9 +25,36 @@ DEFAULT_M = 100
 DEFAULT_N = 10000
 DEFAULT_EPS = 0.1
 DEFAULT_OUTPUT = "./output"
+DEFAULT_P = 0.5  # Bernoulli probability
+DEFAULT_MU = 0.0  # Normal mean
+DEFAULT_SIGMA = 1.0  # Normal std dev
 
 # Supported distributions
-SUPPORTED_DISTRIBUTIONS = ["normal", "bernoulli", "exponential", "uniform"]
+SUPPORTED_DISTRIBUTIONS = ["normal", "bernoulli", "uniform"]
+
+
+def make_distributions(p=DEFAULT_P, mu=DEFAULT_MU, sigma=DEFAULT_SIGMA):
+    """Create distribution dictionary with configured parameters."""
+    return {
+        "bernoulli": {
+            "sample": lambda n: np.random.binomial(1, p, n).astype(float),
+            "mean": lambda: p,
+            "var": lambda: p * (1 - p),
+            "params": f"p={p}",
+        },
+        "uniform": {
+            "sample": lambda n: np.random.uniform(0, 1, n),
+            "mean": lambda: 0.5,
+            "var": lambda: 1 / 12,
+            "params": "a=0, b=1",
+        },
+        "normal": {
+            "sample": lambda n: np.random.normal(mu, sigma, n),
+            "mean": lambda: mu,
+            "var": lambda: sigma**2,
+            "params": f"μ={mu}, σ={sigma}",
+        },
+    }
 
 
 def parse_args(args=None):
@@ -72,6 +101,27 @@ def parse_args(args=None):
         help="Output directory for generated plots",
     )
 
+    parser.add_argument(
+        "--p",
+        type=float,
+        default=DEFAULT_P,
+        help="Bernoulli distribution probability parameter",
+    )
+
+    parser.add_argument(
+        "--mu",
+        type=float,
+        default=DEFAULT_MU,
+        help="Normal distribution mean",
+    )
+
+    parser.add_argument(
+        "--sigma",
+        type=float,
+        default=DEFAULT_SIGMA,
+        help="Normal distribution standard deviation",
+    )
+
     return parser.parse_args(args)
 
 
@@ -88,6 +138,12 @@ def validate_args(args):
 
     if args.eps >= 1:
         return f"Error: eps must be less than 1, got {args.eps}"
+
+    if args.p <= 0 or args.p >= 1:
+        return f"Error: p must be between 0 and 1 (exclusive), got {args.p}"
+
+    if args.sigma <= 0:
+        return f"Error: sigma must be positive, got {args.sigma}"
 
     return None
 
@@ -120,9 +176,15 @@ def main():
         print(f"Error: Cannot create output directory: {e}", file=sys.stderr)
         sys.exit(EXIT_RUNTIME_ERROR)
 
-    # Print configuration (placeholder for actual simulation)
+    # Create distribution dictionary with configured parameters
+    distributions = make_distributions(p=args.p, mu=args.mu, sigma=args.sigma)
+    dist = distributions[args.dist]
+
+    # Print configuration
     print(f"LLN Explorer Configuration:")
-    print(f"  Distribution: {args.dist}")
+    print(f"  Distribution: {args.dist} ({dist['params']})")
+    print(f"  Theoretical mean: {dist['mean']()}")
+    print(f"  Theoretical variance: {dist['var']()}")
     print(f"  Sample paths (M): {args.M}")
     print(f"  Max samples (N): {args.N}")
     print(f"  Epsilon: {args.eps}")
