@@ -10,6 +10,7 @@ A CLI tool for visualizing the Law of Large Numbers through:
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -55,6 +56,71 @@ def make_distributions(p=DEFAULT_P, mu=DEFAULT_MU, sigma=DEFAULT_SIGMA):
             "params": f"μ={mu}, σ={sigma}",
         },
     }
+
+
+# =============================================================================
+# Simulation Functions
+# =============================================================================
+
+
+def simulate_paths(dist_dict, M, N):
+    """Generate M sample paths of length N and compute running averages.
+
+    Args:
+        dist_dict: Distribution dictionary with 'sample', 'mean', 'var' keys
+        M: Number of independent sample paths
+        N: Length of each sample path
+
+    Returns:
+        numpy.ndarray: Shape (M, N) array of running averages X̄ₙ
+    """
+    # Generate all samples at once: (M, N) matrix
+    # Memory: M * N * 8 bytes (float64) = 8MB for M=100, N=10000
+    samples = np.array([dist_dict["sample"](N) for _ in range(M)])
+
+    # Running average via cumulative sum (vectorized for performance)
+    cumsum = np.cumsum(samples, axis=1)
+    indices = np.arange(1, N + 1)
+    running_avgs = cumsum / indices
+
+    return running_avgs
+
+
+def compute_deviation_probability(running_avgs, mu, eps):
+    """Estimate P(|X̄ₙ - μ| > ε) at each sample size.
+
+    Args:
+        running_avgs: Shape (M, N) array of running averages
+        mu: Theoretical mean
+        eps: Deviation tolerance
+
+    Returns:
+        numpy.ndarray: Shape (N,) array of deviation probabilities
+    """
+    # Calculate |X̄ₙ - μ| > ε boolean mask across all paths
+    deviations = np.abs(running_avgs - mu) > eps
+    # Return mean across paths (proportion exceeding threshold at each n)
+    deviation_prob = np.mean(deviations, axis=0)
+    return deviation_prob
+
+
+def compute_empirical_variance(running_avgs):
+    """Compute Var(X̄ₙ) across sample paths at each n.
+
+    Args:
+        running_avgs: Shape (M, N) array of running averages
+
+    Returns:
+        numpy.ndarray: Shape (N,) array of empirical variances
+    """
+    # Calculate variance across M paths at each sample size n
+    empirical_var = np.var(running_avgs, axis=0, ddof=0)
+    return empirical_var
+
+
+# =============================================================================
+# CLI Functions
+# =============================================================================
 
 
 def parse_args(args=None):
@@ -189,6 +255,49 @@ def main():
     print(f"  Max samples (N): {args.N}")
     print(f"  Epsilon: {args.eps}")
     print(f"  Output directory: {output_dir.resolve()}")
+    print()
+
+    # Run simulation with timing
+    print("Running simulation...")
+    start_time = time.time()
+
+    # Generate sample paths and compute running averages
+    running_avgs = simulate_paths(dist, args.M, args.N)
+
+    # Compute statistics
+    mu = dist["mean"]()
+    theoretical_var = dist["var"]()
+    deviation_prob = compute_deviation_probability(running_avgs, mu, args.eps)
+    empirical_var = compute_empirical_variance(running_avgs)
+
+    elapsed_time = time.time() - start_time
+    print(f"Simulation completed in {elapsed_time:.2f} seconds")
+    print()
+
+    # Print summary statistics
+    print("Summary Statistics:")
+    print(f"  Empirical mean (final): {np.mean(running_avgs[:, -1]):.6f}")
+    print(f"  Theoretical mean: {mu:.6f}")
+    print(f"  Empirical variance (final): {empirical_var[-1]:.6f}")
+    print(f"  Theoretical variance (σ²/N): {theoretical_var / args.N:.6f}")
+    print(f"  Deviation probability (final): {deviation_prob[-1]:.4f}")
+    print()
+    print(f"Figures saved to: {output_dir.resolve()}/")
+
+    # Store results for visualization (Epic 3)
+    # Results dictionary can be returned or used by plot functions
+    results = {
+        "running_avgs": running_avgs,
+        "deviation_prob": deviation_prob,
+        "empirical_var": empirical_var,
+        "mu": mu,
+        "theoretical_var": theoretical_var,
+        "eps": args.eps,
+        "M": args.M,
+        "N": args.N,
+        "dist_name": args.dist,
+        "dist_params": dist["params"],
+    }
 
     sys.exit(EXIT_SUCCESS)
 
