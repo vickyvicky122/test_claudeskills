@@ -41,15 +41,15 @@ story_location: docs/implementation-artifacts
 
 development_status:
   # Epic 1: Project Setup & CLI Foundation
-  epic-1: in-progress
-  1-1-project-initialization-basic-script: review
-  1-2-cli-argument-parsing-with-defaults: backlog
+  epic-1: done
+  1-1-project-initialization-basic-script: done
+  1-2-cli-argument-parsing-with-defaults: done
   epic-1-retrospective: optional
 
   # Epic 2: Distribution Support & Simulation Engine
-  epic-2: backlog
-  2-1-distribution-dictionary-implementation: backlog
-  2-2-simulation-engine-with-chunked-processing: backlog
+  epic-2: in-progress
+  2-1-distribution-dictionary-implementation: done
+  2-2-simulation-engine-with-chunked-processing: review
   epic-2-retrospective: optional
 
   # Epic 3: Complete Visualization Suite
