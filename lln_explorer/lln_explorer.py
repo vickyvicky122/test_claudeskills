@@ -225,6 +225,70 @@ def plot_deviation_probability(deviation_prob, eps, dist_name, output_dir):
     return output_path
 
 
+def plot_variance_decay(empirical_var, theoretical_var, dist_name, output_dir):
+    """Plot variance decay comparing empirical vs theoretical σ²/n.
+
+    Args:
+        empirical_var: Shape (N,) array of Var(X̄ₙ) at each n
+        theoretical_var: Theoretical variance σ² of the distribution
+        dist_name: Name of the distribution
+        output_dir: Path object for output directory
+
+    Returns:
+        Path to saved figure
+    """
+    N = len(empirical_var)
+    n_values = np.arange(1, N + 1)
+
+    # Compute theoretical variance decay: σ²/n
+    theoretical_decay = theoretical_var / n_values
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Plot empirical variance
+    ax.plot(
+        n_values,
+        empirical_var,
+        color="blue",
+        linewidth=1.5,
+        label="Empirical Var(X̄ₙ)",
+    )
+
+    # Plot theoretical decay curve
+    ax.plot(
+        n_values,
+        theoretical_decay,
+        color="red",
+        linestyle="--",
+        linewidth=2,
+        label=f"Theoretical σ²/n (σ² = {theoretical_var:.4f})",
+    )
+
+    # Configure axes
+    ax.set_xlabel("Sample size (n)", fontsize=12)
+    ax.set_ylabel("Variance", fontsize=12)
+    ax.set_title(
+        f"Variance Decay - {dist_name.capitalize()} Distribution\n"
+        f"(Empirical vs Theoretical σ²/n)",
+        fontsize=14,
+    )
+    ax.legend(loc="upper right", fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    # Use log-log scale to show 1/n decay clearly
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+
+    plt.tight_layout()
+
+    # Save figure
+    output_path = output_dir / f"{dist_name}_variance.png"
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    return output_path
+
+
 # =============================================================================
 # CLI Functions
 # =============================================================================
@@ -399,6 +463,10 @@ def main():
         deviation_prob, args.eps, args.dist, output_dir
     )
     print(f"  Deviation probability: {deviation_file.name}")
+    variance_file = plot_variance_decay(
+        empirical_var, theoretical_var, args.dist, output_dir
+    )
+    print(f"  Variance decay: {variance_file.name}")
 
     sys.exit(EXIT_SUCCESS)
 
