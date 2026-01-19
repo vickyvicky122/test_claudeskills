@@ -5,7 +5,12 @@ LLN Explorer GUI - Streamlit-based interface for Law of Large Numbers visualizat
 Run with: streamlit run lln_explorer/gui.py
 """
 
+import matplotlib.pyplot as plt
+import numpy as np
 import streamlit as st
+
+# Import simulation functions from CLI module
+from lln_explorer import make_distributions, simulate_paths
 
 # Page configuration
 st.set_page_config(
@@ -39,6 +44,8 @@ def init_session_state():
         "mu": DEFAULT_MU,
         "sigma": DEFAULT_SIGMA,
         "simulation_run": False,
+        "running_avgs": None,
+        "log_scale_x": True,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -158,6 +165,8 @@ def render_sidebar():
 
     if run_clicked:
         st.session_state.simulation_run = True
+        # Clear cached results to force recomputation
+        st.session_state.running_avgs = None
 
     return run_clicked
 
@@ -192,8 +201,208 @@ def get_distribution_info():
         }
 
 
+def run_simulation():
+    """Run the LLN simulation and cache results in session state."""
+    if st.session_state.running_avgs is None:
+        # Create distribution with current parameters
+        distributions = make_distributions(
+            p=st.session_state.p,
+            mu=st.session_state.mu,
+            sigma=st.session_state.sigma,
+        )
+        dist = distributions[st.session_state.dist]
+
+        # Run simulation
+        with st.spinner("Running simulation..."):
+            running_avgs = simulate_paths(dist, st.session_state.M, st.session_state.N)
+            st.session_state.running_avgs = running_avgs
+
+    return st.session_state.running_avgs
+
+
+def plot_sample_paths(running_avgs, mu, dist_name, log_scale=True):
+    """Create sample paths plot showing Strong LLN convergence.
+
+    Args:
+        running_avgs: Shape (M, N) array of running averages
+        mu: Theoretical mean
+        dist_name: Name of the distribution
+        log_scale: Whether to use log scale for x-axis
+
+    Returns:
+        matplotlib figure
+    """
+    M, N = running_avgs.shape
+    n_values = np.arange(1, N + 1)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Plot all M sample paths with low alpha for visibility
+    for i in range(M):
+        ax.plot(n_values, running_avgs[i], alpha=0.3, linewidth=0.5)
+
+    # Add horizontal reference line at theoretical mean
+    ax.axhline(y=mu, color="red", linestyle="--", linewidth=2, label=f"μ = {mu:.4f}")
+
+    # Configure axes
+    ax.set_xlabel("Sample size (n)", fontsize=12)
+    ax.set_ylabel("Running average X̄ₙ", fontsize=12)
+    ax.set_title(
+        f"Sample Path Convergence - {dist_name.capitalize()} Distribution\n"
+        f"({M} paths, Strong LLN)",
+        fontsize=14,
+    )
+    ax.legend(loc="upper right", fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    # Use log scale for x-axis if enabled
+    if log_scale:
+        ax.set_xscale("log")
+
+    plt.tight_layout()
+    return fig
+
+
+def render_sample_paths_tab():
+    """Render the Sample Path Convergence tab with visualization and education."""
+    dist_info = get_distribution_info()
+
+    # Run simulation if needed
+    running_avgs = run_simulation()
+
+    # Visualization controls
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        log_scale = st.checkbox(
+            "Log scale (x-axis)",
+            value=st.session_state.log_scale_x,
+            help="Use logarithmic scale for sample size axis",
+            key="log_scale_sample_paths",
+        )
+        st.session_state.log_scale_x = log_scale
+
+    # Create and display the plot
+    fig = plot_sample_paths(
+        running_avgs,
+        dist_info["mean"],
+        st.session_state.dist,
+        log_scale=log_scale,
+    )
+    st.pyplot(fig)
+    plt.close(fig)
+
+    # Summary statistics
+    st.subheader("Convergence Statistics")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        final_mean = np.mean(running_avgs[:, -1])
+        st.metric(
+            "Empirical Mean (final)",
+            f"{final_mean:.6f}",
+            delta=f"{final_mean - dist_info['mean']:.6f}",
+        )
+    with col2:
+        st.metric("Theoretical Mean (μ)", f"{dist_info['mean']:.6f}")
+    with col3:
+        # Proportion of paths within epsilon of mu at final n
+        within_eps = np.mean(np.abs(running_avgs[:, -1] - dist_info["mean"]) <= st.session_state.eps)
+        st.metric(
+            f"Paths within ε={st.session_state.eps}",
+            f"{within_eps * 100:.1f}%",
+        )
+
+    st.divider()
+
+    # Educational content
+    render_strong_lln_education()
+
+
+def render_strong_lln_education():
+    """Render educational content about the Strong Law of Large Numbers."""
+    st.subheader("Understanding the Strong Law of Large Numbers")
+
+    # Main theorem statement
+    st.markdown("""
+    The **Strong Law of Large Numbers (SLLN)** is a fundamental theorem in probability theory
+    that describes how sample averages converge to the expected value.
+    """)
+
+    # Formal statement with LaTeX
+    with st.expander("Formal Statement", expanded=True):
+        st.markdown("**Theorem (Strong Law of Large Numbers):**")
+        st.markdown("""
+        Let $X_1, X_2, X_3, \\ldots$ be a sequence of independent and identically distributed
+        (i.i.d.) random variables with finite expected value $\\mu = E[X_i]$.
+        """)
+
+        st.markdown("Then the sample mean converges **almost surely** to $\\mu$:")
+
+        st.latex(r"P\left(\lim_{n \to \infty} \bar{X}_n = \mu\right) = 1")
+
+        st.markdown("where the sample mean is defined as:")
+
+        st.latex(r"\bar{X}_n = \frac{1}{n}\sum_{i=1}^{n} X_i = \frac{X_1 + X_2 + \cdots + X_n}{n}")
+
+    # Intuitive explanation
+    with st.expander("Intuitive Explanation", expanded=True):
+        st.markdown("""
+        **What does "almost surely" mean?**
+
+        The Strong LLN says that with probability 1 (i.e., almost surely), the running average
+        of your samples will converge to the true mean $\\mu$.
+
+        **In practical terms:**
+        - As you collect more data, your sample average gets closer to the true population mean
+        - The convergence is not just "likely" — it happens with probability 1
+        - For almost every possible infinite sequence of outcomes, the average will eventually
+          settle near $\\mu$ and stay there
+
+        **What you see in the plot:**
+        - Each colored line is one "sample path" — a sequence of running averages
+        - Early on (small n), paths vary widely
+        - As n increases, all paths converge toward the red dashed line (μ)
+        - The "funnel" shape shows convergence: paths get increasingly concentrated around μ
+        """)
+
+    # Key formulas reference
+    with st.expander("Key Formulas", expanded=False):
+        st.markdown("**Sample Mean:**")
+        st.latex(r"\bar{X}_n = \frac{1}{n}\sum_{i=1}^{n} X_i")
+
+        st.markdown("**Strong LLN Convergence:**")
+        st.latex(r"\bar{X}_n \xrightarrow{a.s.} \mu \quad \text{as } n \to \infty")
+
+        st.markdown("**Equivalent Statement:**")
+        st.latex(r"P\left(\lim_{n \to \infty} \bar{X}_n = \mu\right) = 1")
+
+        st.markdown("**For this simulation:**")
+        dist_info = get_distribution_info()
+        if st.session_state.dist == "normal":
+            st.latex(rf"\mu = {dist_info['mean']:.4f}, \quad \sigma^2 = {dist_info['variance']:.4f}")
+        elif st.session_state.dist == "bernoulli":
+            p = st.session_state.p
+            st.latex(rf"\mu = p = {p:.4f}, \quad \sigma^2 = p(1-p) = {dist_info['variance']:.4f}")
+        else:  # uniform
+            st.latex(rf"\mu = \frac{{a+b}}{{2}} = 0.5, \quad \sigma^2 = \frac{{(b-a)^2}}{{12}} = {dist_info['variance']:.4f}")
+
+    # Comparison with Weak LLN
+    with st.expander("Strong vs Weak LLN", expanded=False):
+        st.markdown("""
+        | Property | Strong LLN | Weak LLN |
+        |----------|-----------|----------|
+        | **Convergence Type** | Almost sure | In probability |
+        | **Statement** | $P(\\lim \\bar{X}_n = \\mu) = 1$ | $\\lim P(|\\bar{X}_n - \\mu| > \\varepsilon) = 0$ |
+        | **Strength** | Stronger (implies Weak LLN) | Weaker |
+        | **Interpretation** | Path-by-path convergence | Probabilistic convergence |
+
+        The Strong LLN implies the Weak LLN, but not vice versa. The Strong LLN makes a
+        statement about individual sample paths, while the Weak LLN makes a statement about
+        the probability distribution of $\\bar{X}_n$.
+        """)
+
+
 def render_main_content():
-    """Render main content area with visualization placeholders."""
+    """Render main content area with visualizations."""
     st.title("LLN Explorer")
     st.markdown("**Interactive Law of Large Numbers Visualization**")
 
@@ -212,31 +421,24 @@ def render_main_content():
 
     st.divider()
 
-    # Visualization placeholders
+    # Visualization tabs
     if st.session_state.simulation_run:
-        st.info(
-            "Simulation parameters updated. Visualization will be implemented in Stories 4.2-4.5."
-        )
-
-        # Placeholder tabs for future visualizations
         tab1, tab2, tab3 = st.tabs(
             ["Sample Paths (Strong LLN)", "Deviation Probability (Weak LLN)", "Variance Decay"]
         )
 
         with tab1:
-            st.subheader("Sample Path Convergence")
-            st.caption("Story 4.2: Will show M sample paths converging to μ")
-            st.empty()
+            render_sample_paths_tab()
 
         with tab2:
             st.subheader("Deviation Probability Decay")
             st.caption("Story 4.3: Will show P(|X̄ₙ - μ| > ε) → 0")
-            st.empty()
+            st.info("This visualization will be implemented in Story 4.3.")
 
         with tab3:
             st.subheader("Variance Decay")
             st.caption("Story 4.4: Will show Var(X̄ₙ) = σ²/n")
-            st.empty()
+            st.info("This visualization will be implemented in Story 4.4.")
 
         # Parameter summary
         with st.expander("Current Parameters", expanded=False):
@@ -282,7 +484,7 @@ def render_main_content():
 def main():
     """Main entry point for the Streamlit GUI."""
     init_session_state()
-    run_clicked = render_sidebar()
+    render_sidebar()
     render_main_content()
 
 
