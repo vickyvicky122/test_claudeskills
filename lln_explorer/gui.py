@@ -10,7 +10,7 @@ import numpy as np
 import streamlit as st
 
 # Import simulation functions from CLI module
-from lln_explorer import make_distributions, simulate_paths
+from lln_explorer import compute_deviation_probability, make_distributions, simulate_paths
 
 # Page configuration
 st.set_page_config(
@@ -46,6 +46,8 @@ def init_session_state():
         "simulation_run": False,
         "running_avgs": None,
         "log_scale_x": True,
+        "log_scale_deviation": True,
+        "show_chebyshev": True,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -401,6 +403,258 @@ def render_strong_lln_education():
         """)
 
 
+def plot_deviation_probability(deviation_prob, eps, variance, dist_name, log_scale=True, show_chebyshev=True):
+    """Create deviation probability plot showing Weak LLN convergence.
+
+    Args:
+        deviation_prob: Shape (N,) array of P(|X̄ₙ - μ| > ε) at each n
+        eps: Epsilon threshold used
+        variance: Theoretical variance σ² of the distribution
+        dist_name: Name of the distribution
+        log_scale: Whether to use log scale for x-axis
+        show_chebyshev: Whether to show Chebyshev bound overlay
+
+    Returns:
+        matplotlib figure
+    """
+    N = len(deviation_prob)
+    n_values = np.arange(1, N + 1)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Plot empirical deviation probability
+    ax.plot(
+        n_values,
+        deviation_prob,
+        color="blue",
+        linewidth=1.5,
+        label=f"Empirical P(|X̄ₙ - μ| > {eps})",
+    )
+
+    # Plot Chebyshev bound if enabled
+    if show_chebyshev:
+        # Chebyshev bound: P(|X̄ₙ - μ| > ε) ≤ σ²/(nε²)
+        chebyshev_bound = variance / (n_values * eps**2)
+        # Clip to [0, 1] since it's a probability bound
+        chebyshev_bound = np.clip(chebyshev_bound, 0, 1)
+        ax.plot(
+            n_values,
+            chebyshev_bound,
+            color="red",
+            linestyle="--",
+            linewidth=2,
+            label=f"Chebyshev bound: σ²/(nε²)",
+        )
+
+    # Configure axes
+    ax.set_xlabel("Sample size (n)", fontsize=12)
+    ax.set_ylabel("Deviation probability", fontsize=12)
+    ax.set_title(
+        f"Deviation Probability Decay - {dist_name.capitalize()} Distribution\n"
+        f"(ε = {eps}, Weak LLN)",
+        fontsize=14,
+    )
+    ax.legend(loc="upper right", fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    # Use log scale for x-axis if enabled
+    if log_scale:
+        ax.set_xscale("log")
+
+    # Set y-axis limits
+    ax.set_ylim(0, 1.05)
+
+    # Add epsilon annotation
+    ax.axhline(y=0, color="gray", linestyle="-", linewidth=0.5)
+    ax.annotate(
+        f"ε = {eps}",
+        xy=(n_values[-1], 0.02),
+        fontsize=10,
+        color="darkblue",
+        ha="right",
+    )
+
+    plt.tight_layout()
+    return fig
+
+
+def render_deviation_probability_tab():
+    """Render the Deviation Probability tab with visualization and education."""
+    dist_info = get_distribution_info()
+
+    # Run simulation if needed
+    running_avgs = run_simulation()
+
+    # Compute deviation probability
+    deviation_prob = compute_deviation_probability(
+        running_avgs, dist_info["mean"], st.session_state.eps
+    )
+
+    # Visualization controls
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col2:
+        log_scale = st.checkbox(
+            "Log scale (x-axis)",
+            value=st.session_state.log_scale_deviation,
+            help="Use logarithmic scale for sample size axis",
+            key="log_scale_deviation_checkbox",
+        )
+        st.session_state.log_scale_deviation = log_scale
+    with col3:
+        show_chebyshev = st.checkbox(
+            "Show Chebyshev bound",
+            value=st.session_state.show_chebyshev,
+            help="Overlay theoretical Chebyshev upper bound",
+            key="show_chebyshev_checkbox",
+        )
+        st.session_state.show_chebyshev = show_chebyshev
+
+    # Create and display the plot
+    fig = plot_deviation_probability(
+        deviation_prob,
+        st.session_state.eps,
+        dist_info["variance"],
+        st.session_state.dist,
+        log_scale=log_scale,
+        show_chebyshev=show_chebyshev,
+    )
+    st.pyplot(fig)
+    plt.close(fig)
+
+    # Summary statistics
+    st.subheader("Deviation Statistics")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric(
+            f"P(|X̄ₙ - μ| > {st.session_state.eps}) at n={st.session_state.N}",
+            f"{deviation_prob[-1]:.4f}",
+        )
+    with col2:
+        # Chebyshev bound at final n
+        chebyshev_final = min(1.0, dist_info["variance"] / (st.session_state.N * st.session_state.eps**2))
+        st.metric(
+            "Chebyshev bound (final)",
+            f"{chebyshev_final:.4f}",
+        )
+    with col3:
+        # Find n where deviation prob first drops below 0.05
+        below_threshold = np.where(deviation_prob < 0.05)[0]
+        if len(below_threshold) > 0:
+            n_convergence = below_threshold[0] + 1
+            st.metric("n where P < 0.05", f"{n_convergence:,}")
+        else:
+            st.metric("n where P < 0.05", "Not reached")
+
+    st.divider()
+
+    # Educational content
+    render_weak_lln_education()
+
+
+def render_weak_lln_education():
+    """Render educational content about the Weak Law of Large Numbers."""
+    st.subheader("Understanding the Weak Law of Large Numbers")
+
+    # Main theorem statement
+    st.markdown("""
+    The **Weak Law of Large Numbers (WLLN)** describes convergence in probability —
+    the probability of the sample mean being far from μ goes to zero.
+    """)
+
+    # Formal statement with LaTeX
+    with st.expander("Formal Statement", expanded=True):
+        st.markdown("**Theorem (Weak Law of Large Numbers):**")
+        st.markdown("""
+        Let $X_1, X_2, X_3, \\ldots$ be a sequence of independent and identically distributed
+        (i.i.d.) random variables with finite expected value $\\mu = E[X_i]$ and finite variance $\\sigma^2$.
+        """)
+
+        st.markdown("Then for any $\\varepsilon > 0$, the sample mean converges **in probability** to $\\mu$:")
+
+        st.latex(r"\lim_{n \to \infty} P\left(|\bar{X}_n - \mu| > \varepsilon\right) = 0")
+
+        st.markdown("This is equivalent to saying:")
+
+        st.latex(r"\bar{X}_n \xrightarrow{P} \mu \quad \text{as } n \to \infty")
+
+    # Chebyshev's Inequality
+    with st.expander("Chebyshev's Inequality", expanded=True):
+        st.markdown("**Chebyshev's Inequality** provides an upper bound on the deviation probability:")
+
+        st.latex(r"P\left(|\bar{X}_n - \mu| > \varepsilon\right) \leq \frac{\text{Var}(\bar{X}_n)}{\varepsilon^2} = \frac{\sigma^2}{n\varepsilon^2}")
+
+        st.markdown("""
+        **Key insights:**
+        - The bound decays as $O(1/n)$ — doubling n halves the bound
+        - The bound is often loose (empirical probability decays faster)
+        - It proves the Weak LLN: as $n \\to \\infty$, the bound $\\to 0$
+        """)
+
+        # Show current values
+        dist_info = get_distribution_info()
+        eps = st.session_state.eps
+        st.markdown(f"**For this simulation** (ε = {eps}, σ² = {dist_info['variance']:.4f}):")
+        st.latex(rf"P(|\bar{{X}}_n - \mu| > {eps}) \leq \frac{{{dist_info['variance']:.4f}}}{{n \cdot {eps}^2}} = \frac{{{dist_info['variance']:.4f}}}{{{eps**2:.4f} \cdot n}}")
+
+    # Intuitive explanation
+    with st.expander("Intuitive Explanation", expanded=True):
+        st.markdown("""
+        **What does "convergence in probability" mean?**
+
+        The Weak LLN says that as n grows, it becomes increasingly unlikely for the sample
+        mean to be far from the true mean.
+
+        **In practical terms:**
+        - Pick any tolerance ε (how far is "far enough")
+        - The probability of exceeding this tolerance shrinks toward zero
+        - Unlike Strong LLN, this doesn't guarantee path-by-path convergence
+
+        **What you see in the plot:**
+        - Blue line: Empirical probability P(|X̄ₙ - μ| > ε) computed from simulations
+        - Red dashed line: Chebyshev's theoretical upper bound
+        - Both decay to zero, confirming the Weak LLN
+        - The empirical curve is typically below the Chebyshev bound (the bound is conservative)
+        """)
+
+    # Key formulas reference
+    with st.expander("Key Formulas", expanded=False):
+        st.markdown("**Weak LLN Convergence:**")
+        st.latex(r"\lim_{n \to \infty} P\left(|\bar{X}_n - \mu| > \varepsilon\right) = 0")
+
+        st.markdown("**Chebyshev's Inequality:**")
+        st.latex(r"P\left(|\bar{X}_n - \mu| > \varepsilon\right) \leq \frac{\sigma^2}{n\varepsilon^2}")
+
+        st.markdown("**Variance of Sample Mean:**")
+        st.latex(r"\text{Var}(\bar{X}_n) = \frac{\sigma^2}{n}")
+
+        st.markdown("**For this simulation:**")
+        dist_info = get_distribution_info()
+        eps = st.session_state.eps
+        if st.session_state.dist == "normal":
+            st.latex(rf"\sigma^2 = {dist_info['variance']:.4f}, \quad \varepsilon = {eps}")
+        elif st.session_state.dist == "bernoulli":
+            p = st.session_state.p
+            st.latex(rf"\sigma^2 = p(1-p) = {dist_info['variance']:.4f}, \quad \varepsilon = {eps}")
+        else:  # uniform
+            st.latex(rf"\sigma^2 = \frac{{(b-a)^2}}{{12}} = {dist_info['variance']:.4f}, \quad \varepsilon = {eps}")
+
+    # Comparison with Strong LLN
+    with st.expander("Weak vs Strong LLN", expanded=False):
+        st.markdown("""
+        | Property | Weak LLN | Strong LLN |
+        |----------|----------|-----------|
+        | **Convergence Type** | In probability | Almost sure |
+        | **Statement** | $\\lim P(|\\bar{X}_n - \\mu| > \\varepsilon) = 0$ | $P(\\lim \\bar{X}_n = \\mu) = 1$ |
+        | **Strength** | Weaker | Stronger (implies Weak LLN) |
+        | **What it says** | Unlikely to be far from μ | Will converge to μ |
+        | **Proof tool** | Chebyshev inequality | More advanced techniques |
+
+        **Key difference:** The Strong LLN implies the Weak LLN, but not vice versa.
+        The Strong LLN guarantees that each individual sequence converges, while the
+        Weak LLN only guarantees that the probability of being far from μ vanishes.
+        """)
+
+
 def render_main_content():
     """Render main content area with visualizations."""
     st.title("LLN Explorer")
@@ -431,9 +685,7 @@ def render_main_content():
             render_sample_paths_tab()
 
         with tab2:
-            st.subheader("Deviation Probability Decay")
-            st.caption("Story 4.3: Will show P(|X̄ₙ - μ| > ε) → 0")
-            st.info("This visualization will be implemented in Story 4.3.")
+            render_deviation_probability_tab()
 
         with tab3:
             st.subheader("Variance Decay")
