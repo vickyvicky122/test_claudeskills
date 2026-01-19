@@ -13,6 +13,7 @@ import sys
 import time
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 # Exit codes
@@ -116,6 +117,59 @@ def compute_empirical_variance(running_avgs):
     # Calculate variance across M paths at each sample size n
     empirical_var = np.var(running_avgs, axis=0, ddof=0)
     return empirical_var
+
+
+# =============================================================================
+# Visualization Functions
+# =============================================================================
+
+
+def plot_sample_paths(running_avgs, mu, dist_name, output_dir):
+    """Plot sample paths showing Strong LLN (pathwise convergence).
+
+    Args:
+        running_avgs: Shape (M, N) array of running averages
+        mu: Theoretical mean
+        dist_name: Name of the distribution
+        output_dir: Path object for output directory
+
+    Returns:
+        Path to saved figure
+    """
+    M, N = running_avgs.shape
+    n_values = np.arange(1, N + 1)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Plot all M sample paths with low alpha for visibility
+    for i in range(M):
+        ax.plot(n_values, running_avgs[i], alpha=0.3, linewidth=0.5)
+
+    # Add horizontal reference line at theoretical mean
+    ax.axhline(y=mu, color="red", linestyle="--", linewidth=2, label=f"μ = {mu}")
+
+    # Configure axes
+    ax.set_xlabel("Sample size (n)", fontsize=12)
+    ax.set_ylabel("Running average X̄ₙ", fontsize=12)
+    ax.set_title(
+        f"Sample Path Convergence - {dist_name.capitalize()} Distribution\n"
+        f"({M} paths, Strong LLN)",
+        fontsize=14,
+    )
+    ax.legend(loc="upper right", fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    # Use log scale for x-axis to better show convergence
+    ax.set_xscale("log")
+
+    plt.tight_layout()
+
+    # Save figure
+    output_path = output_dir / f"{dist_name}_sample_paths.png"
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    return output_path
 
 
 # =============================================================================
@@ -225,7 +279,7 @@ def main():
     """Main entry point."""
     try:
         args = parse_args()
-    except SystemExit as e:
+    except SystemExit:
         # argparse exits with code 2 for invalid arguments, normalize to 1
         sys.exit(EXIT_INVALID_ARGS)
 
@@ -247,7 +301,7 @@ def main():
     dist = distributions[args.dist]
 
     # Print configuration
-    print(f"LLN Explorer Configuration:")
+    print("LLN Explorer Configuration:")
     print(f"  Distribution: {args.dist} ({dist['params']})")
     print(f"  Theoretical mean: {dist['mean']()}")
     print(f"  Theoretical variance: {dist['var']()}")
@@ -284,20 +338,10 @@ def main():
     print()
     print(f"Figures saved to: {output_dir.resolve()}/")
 
-    # Store results for visualization (Epic 3)
-    # Results dictionary can be returned or used by plot functions
-    results = {
-        "running_avgs": running_avgs,
-        "deviation_prob": deviation_prob,
-        "empirical_var": empirical_var,
-        "mu": mu,
-        "theoretical_var": theoretical_var,
-        "eps": args.eps,
-        "M": args.M,
-        "N": args.N,
-        "dist_name": args.dist,
-        "dist_params": dist["params"],
-    }
+    # Generate visualizations
+    print("Generating visualizations...")
+    sample_paths_file = plot_sample_paths(running_avgs, mu, args.dist, output_dir)
+    print(f"  Sample paths: {sample_paths_file.name}")
 
     sys.exit(EXIT_SUCCESS)
 
