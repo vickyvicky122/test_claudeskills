@@ -10,7 +10,12 @@ import numpy as np
 import streamlit as st
 
 # Import simulation functions from CLI module
-from lln_explorer import compute_deviation_probability, make_distributions, simulate_paths
+from lln_explorer import (
+    compute_deviation_probability,
+    compute_empirical_variance,
+    make_distributions,
+    simulate_paths,
+)
 
 # Page configuration
 st.set_page_config(
@@ -48,6 +53,8 @@ def init_session_state():
         "log_scale_x": True,
         "log_scale_deviation": True,
         "show_chebyshev": True,
+        "log_scale_variance": True,
+        "show_theoretical_variance": True,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -655,6 +662,285 @@ def render_weak_lln_education():
         """)
 
 
+def plot_variance_decay(empirical_var, theoretical_var, dist_name, log_scale=True, show_theoretical=True):
+    """Create variance decay plot showing Var(X̄ₙ) = σ²/n.
+
+    Args:
+        empirical_var: Shape (N,) array of Var(X̄ₙ) at each n
+        theoretical_var: Theoretical variance σ² of the distribution
+        dist_name: Name of the distribution
+        log_scale: Whether to use log-log scale
+        show_theoretical: Whether to show theoretical σ²/n overlay
+
+    Returns:
+        matplotlib figure
+    """
+    N = len(empirical_var)
+    n_values = np.arange(1, N + 1)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Plot empirical variance
+    ax.plot(
+        n_values,
+        empirical_var,
+        color="blue",
+        linewidth=1.5,
+        label="Empirical Var(X̄ₙ)",
+    )
+
+    # Plot theoretical variance decay if enabled
+    if show_theoretical:
+        theoretical_decay = theoretical_var / n_values
+        ax.plot(
+            n_values,
+            theoretical_decay,
+            color="red",
+            linestyle="--",
+            linewidth=2,
+            label="Theoretical σ²/n",
+        )
+
+    # Configure axes
+    ax.set_xlabel("Sample size (n)", fontsize=12)
+    ax.set_ylabel("Variance of sample mean", fontsize=12)
+    ax.set_title(
+        f"Variance Decay - {dist_name.capitalize()} Distribution\n"
+        f"(σ² = {theoretical_var:.4f})",
+        fontsize=14,
+    )
+    ax.legend(loc="upper right", fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    # Use log-log scale if enabled (shows linear decay)
+    if log_scale:
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+
+    plt.tight_layout()
+    return fig
+
+
+def render_variance_decay_tab():
+    """Render the Variance Decay tab with visualization and education."""
+    dist_info = get_distribution_info()
+
+    # Run simulation if needed
+    running_avgs = run_simulation()
+
+    # Compute empirical variance
+    empirical_var = compute_empirical_variance(running_avgs)
+
+    # Visualization controls
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col2:
+        log_scale = st.checkbox(
+            "Log-log scale",
+            value=st.session_state.log_scale_variance,
+            help="Use logarithmic scale for both axes (shows 1/n decay as linear)",
+            key="log_scale_variance_checkbox",
+        )
+        st.session_state.log_scale_variance = log_scale
+    with col3:
+        show_theoretical = st.checkbox(
+            "Show σ²/n curve",
+            value=st.session_state.show_theoretical_variance,
+            help="Overlay theoretical variance decay curve",
+            key="show_theoretical_variance_checkbox",
+        )
+        st.session_state.show_theoretical_variance = show_theoretical
+
+    # Create and display the plot
+    fig = plot_variance_decay(
+        empirical_var,
+        dist_info["variance"],
+        st.session_state.dist,
+        log_scale=log_scale,
+        show_theoretical=show_theoretical,
+    )
+    st.pyplot(fig)
+    plt.close(fig)
+
+    # Summary statistics
+    st.subheader("Variance Statistics")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric(
+            "Distribution Variance (σ²)",
+            f"{dist_info['variance']:.6f}",
+        )
+    with col2:
+        theoretical_final = dist_info["variance"] / st.session_state.N
+        st.metric(
+            f"Theoretical Var(X̄ₙ) at n={st.session_state.N}",
+            f"{theoretical_final:.6f}",
+        )
+    with col3:
+        st.metric(
+            "Empirical Var(X̄ₙ) (final)",
+            f"{empirical_var[-1]:.6f}",
+            delta=f"{empirical_var[-1] - theoretical_final:.2e}",
+        )
+
+    # Additional statistics row
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        se_theoretical = np.sqrt(dist_info["variance"] / st.session_state.N)
+        st.metric(
+            "Standard Error (σ/√n)",
+            f"{se_theoretical:.6f}",
+        )
+    with col2:
+        se_empirical = np.sqrt(empirical_var[-1])
+        st.metric(
+            "Empirical SE (final)",
+            f"{se_empirical:.6f}",
+        )
+    with col3:
+        # Ratio of empirical to theoretical variance
+        ratio = empirical_var[-1] / theoretical_final if theoretical_final > 0 else 0
+        st.metric(
+            "Empirical/Theoretical Ratio",
+            f"{ratio:.4f}",
+        )
+
+    st.divider()
+
+    # Educational content
+    render_variance_decay_education()
+
+
+def render_variance_decay_education():
+    """Render educational content about variance decay and standard error."""
+    st.subheader("Understanding Variance Decay")
+
+    # Main concept
+    st.markdown("""
+    The **Variance of the Sample Mean** decreases as $1/n$ — this is why larger samples
+    give more reliable estimates of the population mean.
+    """)
+
+    # Variance of Sample Mean
+    with st.expander("Variance of Sample Mean", expanded=True):
+        st.markdown("**Theorem:**")
+        st.markdown("""
+        For independent, identically distributed (i.i.d.) random variables
+        $X_1, X_2, \\ldots, X_n$ with variance $\\sigma^2$:
+        """)
+
+        st.latex(r"\text{Var}(\bar{X}_n) = \text{Var}\left(\frac{1}{n}\sum_{i=1}^{n} X_i\right) = \frac{\sigma^2}{n}")
+
+        st.markdown("**Derivation:**")
+        st.latex(r"\text{Var}(\bar{X}_n) = \text{Var}\left(\frac{X_1 + X_2 + \cdots + X_n}{n}\right)")
+        st.latex(r"= \frac{1}{n^2} \text{Var}(X_1 + X_2 + \cdots + X_n)")
+        st.latex(r"= \frac{1}{n^2} \cdot n \cdot \sigma^2 \quad \text{(independence)}")
+        st.latex(r"= \frac{\sigma^2}{n}")
+
+        # Show current values
+        dist_info = get_distribution_info()
+        st.markdown(f"**For this simulation** (σ² = {dist_info['variance']:.4f}):")
+        st.latex(rf"\text{{Var}}(\bar{{X}}_n) = \frac{{{dist_info['variance']:.4f}}}{{n}}")
+
+    # Standard Error
+    with st.expander("Standard Error", expanded=True):
+        st.markdown("**Definition:**")
+        st.markdown("""
+        The **Standard Error (SE)** is the standard deviation of the sample mean:
+        """)
+
+        st.latex(r"\text{SE}(\bar{X}_n) = \sqrt{\text{Var}(\bar{X}_n)} = \frac{\sigma}{\sqrt{n}}")
+
+        st.markdown("""
+        **Interpretation:**
+        - The SE quantifies the "typical" deviation of $\\bar{X}_n$ from the true mean $\\mu$
+        - It decreases as $1/\\sqrt{n}$ — to halve the SE, you need 4× the sample size
+        - Used to construct confidence intervals: $\\bar{X}_n \\pm z_{\\alpha/2} \\cdot \\text{SE}$
+        """)
+
+        # Show current SE
+        dist_info = get_distribution_info()
+        sigma = np.sqrt(dist_info["variance"])
+        N = st.session_state.N
+        se = sigma / np.sqrt(N)
+        st.markdown(f"**For this simulation** (σ = {sigma:.4f}, n = {N}):")
+        st.latex(rf"\text{{SE}}(\bar{{X}}_n) = \frac{{{sigma:.4f}}}{{\sqrt{{{N}}}}} = {se:.6f}")
+
+    # Why this matters
+    with st.expander("Why Variance Decay Matters", expanded=True):
+        st.markdown("""
+        **Practical Implications:**
+
+        1. **Larger samples → More reliable estimates**
+           - As n increases, Var($\\bar{X}_n$) decreases
+           - The sample mean becomes a more precise estimator of μ
+
+        2. **The 1/n decay rate is fundamental**
+           - This rate appears throughout statistics
+           - It's why "more data is better" has mathematical backing
+
+        3. **Log-log plot shows linear relationship**
+           - In log-log scale: $\\log(\\text{Var}) = \\log(\\sigma^2) - \\log(n)$
+           - Slope of -1 confirms the 1/n decay
+
+        4. **Diminishing returns**
+           - To halve the variance, you need 2× the data
+           - To halve the SE, you need 4× the data
+        """)
+
+    # Key formulas
+    with st.expander("Key Formulas", expanded=False):
+        st.markdown("**Variance of Sample Mean:**")
+        st.latex(r"\text{Var}(\bar{X}_n) = \frac{\sigma^2}{n}")
+
+        st.markdown("**Standard Error:**")
+        st.latex(r"\text{SE}(\bar{X}_n) = \frac{\sigma}{\sqrt{n}}")
+
+        st.markdown("**Log-log relationship:**")
+        st.latex(r"\log(\text{Var}(\bar{X}_n)) = \log(\sigma^2) - \log(n)")
+
+        st.markdown("**Scaling relationships:**")
+        st.markdown("""
+        | To achieve... | You need... |
+        |---------------|-------------|
+        | Half the variance | 2× sample size |
+        | Half the SE | 4× sample size |
+        | 1/10 the variance | 10× sample size |
+        | 1/10 the SE | 100× sample size |
+        """)
+
+        st.markdown("**For this simulation:**")
+        dist_info = get_distribution_info()
+        if st.session_state.dist == "normal":
+            sigma = st.session_state.sigma
+            st.latex(rf"\sigma^2 = {sigma}^2 = {dist_info['variance']:.4f}")
+        elif st.session_state.dist == "bernoulli":
+            p = st.session_state.p
+            st.latex(rf"\sigma^2 = p(1-p) = {p}(1-{p}) = {dist_info['variance']:.4f}")
+        else:  # uniform
+            st.latex(rf"\sigma^2 = \frac{{(b-a)^2}}{{12}} = \frac{{1}}{{12}} = {dist_info['variance']:.4f}")
+
+    # Connection to LLN
+    with st.expander("Connection to Law of Large Numbers", expanded=False):
+        st.markdown("""
+        **Why variance decay proves the Weak LLN:**
+
+        Chebyshev's inequality states:
+        """)
+        st.latex(r"P(|\bar{X}_n - \mu| > \varepsilon) \leq \frac{\text{Var}(\bar{X}_n)}{\varepsilon^2} = \frac{\sigma^2}{n\varepsilon^2}")
+
+        st.markdown("""
+        Since $\\text{Var}(\\bar{X}_n) = \\sigma^2/n \\to 0$ as $n \\to \\infty$:
+        - The Chebyshev bound → 0
+        - Therefore $P(|\\bar{X}_n - \\mu| > \\varepsilon) \\to 0$
+        - This proves the Weak Law of Large Numbers!
+
+        **The chain of reasoning:**
+        1. Variance decays as 1/n
+        2. Chebyshev bound uses variance
+        3. Bound → 0 proves convergence in probability
+        """)
+
+
 def render_main_content():
     """Render main content area with visualizations."""
     st.title("LLN Explorer")
@@ -688,9 +974,7 @@ def render_main_content():
             render_deviation_probability_tab()
 
         with tab3:
-            st.subheader("Variance Decay")
-            st.caption("Story 4.4: Will show Var(X̄ₙ) = σ²/n")
-            st.info("This visualization will be implemented in Story 4.4.")
+            render_variance_decay_tab()
 
         # Parameter summary
         with st.expander("Current Parameters", expanded=False):
