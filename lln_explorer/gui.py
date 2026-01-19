@@ -221,15 +221,32 @@ def run_simulation():
         )
         dist = distributions[st.session_state.dist]
 
-        # Run simulation
-        with st.spinner("Running simulation..."):
-            running_avgs = simulate_paths(dist, st.session_state.M, st.session_state.N)
-            st.session_state.running_avgs = running_avgs
+        # Run simulation with progress indicator
+        progress_text = "Running simulation..."
+        progress_bar = st.progress(0, text=progress_text)
+
+        # Simulate in chunks to show progress
+        M = st.session_state.M
+        N = st.session_state.N
+        chunk_size = max(1, M // 10)  # 10 progress updates
+        running_avgs_list = []
+
+        for i in range(0, M, chunk_size):
+            chunk_m = min(chunk_size, M - i)
+            chunk_avgs = simulate_paths(dist, chunk_m, N)
+            running_avgs_list.append(chunk_avgs)
+            progress = min((i + chunk_m) / M, 1.0)
+            progress_bar.progress(progress, text=f"Simulating paths... {int(progress * 100)}%")
+
+        # Combine chunks
+        running_avgs = np.vstack(running_avgs_list)
+        st.session_state.running_avgs = running_avgs
+        progress_bar.empty()
 
     return st.session_state.running_avgs
 
 
-def plot_sample_paths(running_avgs, mu, dist_name, log_scale=True):
+def plot_sample_paths(running_avgs, mu, dist_name, log_scale=True, compact=False):
     """Create sample paths plot showing Strong LLN convergence.
 
     Args:
@@ -237,6 +254,7 @@ def plot_sample_paths(running_avgs, mu, dist_name, log_scale=True):
         mu: Theoretical mean
         dist_name: Name of the distribution
         log_scale: Whether to use log scale for x-axis
+        compact: Whether to create a smaller plot for dashboard
 
     Returns:
         matplotlib figure
@@ -244,7 +262,8 @@ def plot_sample_paths(running_avgs, mu, dist_name, log_scale=True):
     M, N = running_avgs.shape
     n_values = np.arange(1, N + 1)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    figsize = (5, 3.5) if compact else (10, 6)
+    fig, ax = plt.subplots(figsize=figsize)
 
     # Plot all M sample paths with low alpha for visibility
     for i in range(M):
@@ -254,14 +273,17 @@ def plot_sample_paths(running_avgs, mu, dist_name, log_scale=True):
     ax.axhline(y=mu, color="red", linestyle="--", linewidth=2, label=f"μ = {mu:.4f}")
 
     # Configure axes
-    ax.set_xlabel("Sample size (n)", fontsize=12)
-    ax.set_ylabel("Running average X̄ₙ", fontsize=12)
-    ax.set_title(
+    fontsize_label = 9 if compact else 12
+    fontsize_title = 10 if compact else 14
+    fontsize_legend = 8 if compact else 10
+    ax.set_xlabel("Sample size (n)", fontsize=fontsize_label)
+    ax.set_ylabel("Running average X̄ₙ", fontsize=fontsize_label)
+    title = "Sample Paths (Strong LLN)" if compact else (
         f"Sample Path Convergence - {dist_name.capitalize()} Distribution\n"
-        f"({M} paths, Strong LLN)",
-        fontsize=14,
+        f"({M} paths, Strong LLN)"
     )
-    ax.legend(loc="upper right", fontsize=10)
+    ax.set_title(title, fontsize=fontsize_title)
+    ax.legend(loc="upper right", fontsize=fontsize_legend)
     ax.grid(True, alpha=0.3)
 
     # Use log scale for x-axis if enabled
@@ -410,7 +432,7 @@ def render_strong_lln_education():
         """)
 
 
-def plot_deviation_probability(deviation_prob, eps, variance, dist_name, log_scale=True, show_chebyshev=True):
+def plot_deviation_probability(deviation_prob, eps, variance, dist_name, log_scale=True, show_chebyshev=True, compact=False):
     """Create deviation probability plot showing Weak LLN convergence.
 
     Args:
@@ -420,6 +442,7 @@ def plot_deviation_probability(deviation_prob, eps, variance, dist_name, log_sca
         dist_name: Name of the distribution
         log_scale: Whether to use log scale for x-axis
         show_chebyshev: Whether to show Chebyshev bound overlay
+        compact: Whether to create a smaller plot for dashboard
 
     Returns:
         matplotlib figure
@@ -427,7 +450,8 @@ def plot_deviation_probability(deviation_prob, eps, variance, dist_name, log_sca
     N = len(deviation_prob)
     n_values = np.arange(1, N + 1)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    figsize = (5, 3.5) if compact else (10, 6)
+    fig, ax = plt.subplots(figsize=figsize)
 
     # Plot empirical deviation probability
     ax.plot(
@@ -454,14 +478,17 @@ def plot_deviation_probability(deviation_prob, eps, variance, dist_name, log_sca
         )
 
     # Configure axes
-    ax.set_xlabel("Sample size (n)", fontsize=12)
-    ax.set_ylabel("Deviation probability", fontsize=12)
-    ax.set_title(
+    fontsize_label = 9 if compact else 12
+    fontsize_title = 10 if compact else 14
+    fontsize_legend = 8 if compact else 10
+    ax.set_xlabel("Sample size (n)", fontsize=fontsize_label)
+    ax.set_ylabel("Deviation probability", fontsize=fontsize_label)
+    title = "Deviation Probability (Weak LLN)" if compact else (
         f"Deviation Probability Decay - {dist_name.capitalize()} Distribution\n"
-        f"(ε = {eps}, Weak LLN)",
-        fontsize=14,
+        f"(ε = {eps}, Weak LLN)"
     )
-    ax.legend(loc="upper right", fontsize=10)
+    ax.set_title(title, fontsize=fontsize_title)
+    ax.legend(loc="upper right", fontsize=fontsize_legend)
     ax.grid(True, alpha=0.3)
 
     # Use log scale for x-axis if enabled
@@ -471,15 +498,16 @@ def plot_deviation_probability(deviation_prob, eps, variance, dist_name, log_sca
     # Set y-axis limits
     ax.set_ylim(0, 1.05)
 
-    # Add epsilon annotation
-    ax.axhline(y=0, color="gray", linestyle="-", linewidth=0.5)
-    ax.annotate(
-        f"ε = {eps}",
-        xy=(n_values[-1], 0.02),
-        fontsize=10,
-        color="darkblue",
-        ha="right",
-    )
+    # Add epsilon annotation (skip in compact mode)
+    if not compact:
+        ax.axhline(y=0, color="gray", linestyle="-", linewidth=0.5)
+        ax.annotate(
+            f"ε = {eps}",
+            xy=(n_values[-1], 0.02),
+            fontsize=10,
+            color="darkblue",
+            ha="right",
+        )
 
     plt.tight_layout()
     return fig
@@ -662,7 +690,7 @@ def render_weak_lln_education():
         """)
 
 
-def plot_variance_decay(empirical_var, theoretical_var, dist_name, log_scale=True, show_theoretical=True):
+def plot_variance_decay(empirical_var, theoretical_var, dist_name, log_scale=True, show_theoretical=True, compact=False):
     """Create variance decay plot showing Var(X̄ₙ) = σ²/n.
 
     Args:
@@ -671,6 +699,7 @@ def plot_variance_decay(empirical_var, theoretical_var, dist_name, log_scale=Tru
         dist_name: Name of the distribution
         log_scale: Whether to use log-log scale
         show_theoretical: Whether to show theoretical σ²/n overlay
+        compact: Whether to create a smaller plot for dashboard
 
     Returns:
         matplotlib figure
@@ -678,7 +707,8 @@ def plot_variance_decay(empirical_var, theoretical_var, dist_name, log_scale=Tru
     N = len(empirical_var)
     n_values = np.arange(1, N + 1)
 
-    fig, ax = plt.subplots(figsize=(10, 6))
+    figsize = (5, 3.5) if compact else (10, 6)
+    fig, ax = plt.subplots(figsize=figsize)
 
     # Plot empirical variance
     ax.plot(
@@ -702,14 +732,17 @@ def plot_variance_decay(empirical_var, theoretical_var, dist_name, log_scale=Tru
         )
 
     # Configure axes
-    ax.set_xlabel("Sample size (n)", fontsize=12)
-    ax.set_ylabel("Variance of sample mean", fontsize=12)
-    ax.set_title(
+    fontsize_label = 9 if compact else 12
+    fontsize_title = 10 if compact else 14
+    fontsize_legend = 8 if compact else 10
+    ax.set_xlabel("Sample size (n)", fontsize=fontsize_label)
+    ax.set_ylabel("Variance of sample mean", fontsize=fontsize_label)
+    title = "Variance Decay (σ²/n)" if compact else (
         f"Variance Decay - {dist_name.capitalize()} Distribution\n"
-        f"(σ² = {theoretical_var:.4f})",
-        fontsize=14,
+        f"(σ² = {theoretical_var:.4f})"
     )
-    ax.legend(loc="upper right", fontsize=10)
+    ax.set_title(title, fontsize=fontsize_title)
+    ax.legend(loc="upper right", fontsize=fontsize_legend)
     ax.grid(True, alpha=0.3)
 
     # Use log-log scale if enabled (shows linear decay)
@@ -941,40 +974,548 @@ def render_variance_decay_education():
         """)
 
 
+def render_dashboard_tab():
+    """Render the Dashboard tab with all three visualizations in a grid layout."""
+    dist_info = get_distribution_info()
+    running_avgs = run_simulation()
+
+    # Compute derived data
+    deviation_prob = compute_deviation_probability(
+        running_avgs, dist_info["mean"], st.session_state.eps
+    )
+    empirical_var = compute_empirical_variance(running_avgs)
+
+    # Summary statistics panel at top
+    st.subheader("Summary Statistics")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        final_mean = np.mean(running_avgs[:, -1])
+        st.metric(
+            "Empirical Mean",
+            f"{final_mean:.4f}",
+            delta=f"{final_mean - dist_info['mean']:.4f}",
+        )
+    with col2:
+        st.metric("Theoretical Mean (μ)", f"{dist_info['mean']:.4f}")
+    with col3:
+        within_eps = np.mean(np.abs(running_avgs[:, -1] - dist_info["mean"]) <= st.session_state.eps)
+        st.metric(f"Paths within ε", f"{within_eps * 100:.1f}%")
+    with col4:
+        st.metric("Final Deviation P", f"{deviation_prob[-1]:.4f}")
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Variance (σ²)", f"{dist_info['variance']:.4f}")
+    with col2:
+        theoretical_var_final = dist_info["variance"] / st.session_state.N
+        st.metric("Var(X̄ₙ) theoretical", f"{theoretical_var_final:.2e}")
+    with col3:
+        st.metric("Var(X̄ₙ) empirical", f"{empirical_var[-1]:.2e}")
+    with col4:
+        se = np.sqrt(dist_info["variance"] / st.session_state.N)
+        st.metric("Standard Error", f"{se:.4f}")
+
+    st.divider()
+
+    # Three plots in a row
+    st.subheader("Visualizations")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        fig1 = plot_sample_paths(
+            running_avgs,
+            dist_info["mean"],
+            st.session_state.dist,
+            log_scale=True,
+            compact=True,
+        )
+        st.pyplot(fig1)
+        plt.close(fig1)
+        st.caption("Sample paths converging to μ")
+
+    with col2:
+        fig2 = plot_deviation_probability(
+            deviation_prob,
+            st.session_state.eps,
+            dist_info["variance"],
+            st.session_state.dist,
+            log_scale=True,
+            show_chebyshev=True,
+            compact=True,
+        )
+        st.pyplot(fig2)
+        plt.close(fig2)
+        st.caption("P(|X̄ₙ - μ| > ε) decay")
+
+    with col3:
+        fig3 = plot_variance_decay(
+            empirical_var,
+            dist_info["variance"],
+            st.session_state.dist,
+            log_scale=True,
+            show_theoretical=True,
+            compact=True,
+        )
+        st.pyplot(fig3)
+        plt.close(fig3)
+        st.caption("Var(X̄ₙ) = σ²/n decay")
+
+    # Convergence metrics
+    st.divider()
+    st.subheader("Convergence Metrics")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("**Strong LLN**")
+        max_deviation = np.max(np.abs(running_avgs[:, -1] - dist_info["mean"]))
+        st.write(f"Max deviation at n={st.session_state.N}: {max_deviation:.6f}")
+        st.write(f"All paths within ε: {'Yes' if within_eps == 1.0 else 'No'}")
+    with col2:
+        st.markdown("**Weak LLN**")
+        chebyshev_final = min(1.0, dist_info["variance"] / (st.session_state.N * st.session_state.eps**2))
+        st.write(f"Empirical P(deviation > ε): {deviation_prob[-1]:.4f}")
+        st.write(f"Chebyshev bound: {chebyshev_final:.4f}")
+    with col3:
+        st.markdown("**Variance Decay**")
+        ratio = empirical_var[-1] / theoretical_var_final if theoretical_var_final > 0 else 0
+        st.write(f"Empirical/Theoretical ratio: {ratio:.4f}")
+        st.write(f"SE(X̄ₙ): {np.sqrt(empirical_var[-1]):.6f}")
+
+
+def render_learn_tab():
+    """Render the Learn tab with comprehensive educational content."""
+    st.subheader("Learn: Law of Large Numbers")
+
+    st.markdown("""
+    Welcome to the **LLN Explorer Learning Guide**. This section provides a structured
+    journey through the Law of Large Numbers and related concepts.
+    """)
+
+    # Table of contents
+    sections = [
+        "Introduction to LLN",
+        "Distribution Properties",
+        "Strong vs Weak LLN",
+        "Mathematical Prerequisites",
+        "Key Formulas Reference",
+    ]
+
+    selected = st.radio("Select a topic:", sections, horizontal=True)
+
+    st.divider()
+
+    if selected == "Introduction to LLN":
+        render_learn_introduction()
+    elif selected == "Distribution Properties":
+        render_learn_distributions()
+    elif selected == "Strong vs Weak LLN":
+        render_learn_comparison()
+    elif selected == "Mathematical Prerequisites":
+        render_learn_prerequisites()
+    elif selected == "Key Formulas Reference":
+        render_learn_formulas()
+
+
+def render_learn_introduction():
+    """Render introduction to LLN educational content."""
+    st.markdown("## Introduction to the Law of Large Numbers")
+
+    st.markdown("""
+    The **Law of Large Numbers (LLN)** is one of the most fundamental theorems in probability
+    and statistics. It describes the result of performing the same experiment many times.
+
+    ### The Core Idea
+
+    When you repeat a random experiment many times, the average of the results gets closer
+    and closer to the expected value.
+    """)
+
+    st.info("""
+    **Example:** If you flip a fair coin many times, the proportion of heads will get
+    closer to 0.5 as you flip more times.
+    """)
+
+    st.markdown("""
+    ### Why It Matters
+
+    The LLN is the mathematical foundation for:
+    - **Polling and surveys**: Why larger samples give more accurate results
+    - **Insurance**: Why insurers can predict claims accurately with enough customers
+    - **Casino profits**: Why the house always wins in the long run
+    - **Quality control**: Why sampling can reliably detect defects
+    - **Scientific experiments**: Why repeated measurements improve precision
+
+    ### Two Versions
+
+    There are two main versions of the LLN:
+
+    1. **Strong Law (SLLN)**: The sample average *converges almost surely* to the expected value
+    2. **Weak Law (WLLN)**: The probability of the sample average being far from the expected
+       value *goes to zero*
+
+    The Strong LLN is a stronger result (it implies the Weak LLN), but both are important
+    in different contexts.
+    """)
+
+    st.latex(r"\text{Strong LLN: } P\left(\lim_{n \to \infty} \bar{X}_n = \mu\right) = 1")
+    st.latex(r"\text{Weak LLN: } \lim_{n \to \infty} P\left(|\bar{X}_n - \mu| > \varepsilon\right) = 0")
+
+
+def render_learn_distributions():
+    """Render distribution properties educational content."""
+    st.markdown("## Distribution Properties")
+
+    st.markdown("""
+    Understanding the properties of different probability distributions is essential
+    for applying the LLN. Here are the three distributions available in this explorer:
+    """)
+
+    # Normal Distribution
+    with st.expander("Normal Distribution", expanded=True):
+        st.markdown("### Normal (Gaussian) Distribution")
+        st.latex(r"X \sim \mathcal{N}(\mu, \sigma^2)")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Parameters:**")
+            st.markdown("- μ (mu): Mean / location parameter")
+            st.markdown("- σ (sigma): Standard deviation / scale parameter")
+
+            st.markdown("**Properties:**")
+            st.markdown(f"- Mean: E[X] = μ")
+            st.markdown(f"- Variance: Var(X) = σ²")
+            st.markdown("- Symmetric about μ")
+            st.markdown("- 68-95-99.7 rule applies")
+
+        with col2:
+            st.markdown("**Probability Density Function (PDF):**")
+            st.latex(r"f(x) = \frac{1}{\sigma\sqrt{2\pi}} \exp\left(-\frac{(x-\mu)^2}{2\sigma^2}\right)")
+
+            st.markdown("**Standard Normal:**")
+            st.latex(r"Z = \frac{X - \mu}{\sigma} \sim \mathcal{N}(0, 1)")
+
+    # Bernoulli Distribution
+    with st.expander("Bernoulli Distribution", expanded=True):
+        st.markdown("### Bernoulli Distribution")
+        st.latex(r"X \sim \text{Bernoulli}(p)")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Parameters:**")
+            st.markdown("- p: Probability of success (0 < p < 1)")
+
+            st.markdown("**Properties:**")
+            st.markdown("- Mean: E[X] = p")
+            st.markdown("- Variance: Var(X) = p(1-p)")
+            st.markdown("- Takes values 0 or 1 only")
+            st.markdown("- Maximum variance at p = 0.5")
+
+        with col2:
+            st.markdown("**Probability Mass Function (PMF):**")
+            st.latex(r"P(X = k) = p^k (1-p)^{1-k}, \quad k \in \{0, 1\}")
+
+            st.markdown("**Connection to Binomial:**")
+            st.markdown("Sum of n Bernoulli trials = Binomial(n, p)")
+
+    # Uniform Distribution
+    with st.expander("Uniform Distribution", expanded=True):
+        st.markdown("### Uniform Distribution")
+        st.latex(r"X \sim \text{Uniform}(a, b)")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Parameters:**")
+            st.markdown("- a: Lower bound")
+            st.markdown("- b: Upper bound (b > a)")
+            st.markdown("- This explorer uses a=0, b=1")
+
+            st.markdown("**Properties:**")
+            st.markdown("- Mean: E[X] = (a+b)/2")
+            st.markdown("- Variance: Var(X) = (b-a)²/12")
+            st.markdown("- All values equally likely")
+
+        with col2:
+            st.markdown("**Probability Density Function (PDF):**")
+            st.latex(r"f(x) = \frac{1}{b-a}, \quad a \leq x \leq b")
+
+            st.markdown("**For Uniform(0,1):**")
+            st.latex(r"\mu = 0.5, \quad \sigma^2 = \frac{1}{12} \approx 0.0833")
+
+    # Current distribution info
+    st.divider()
+    st.markdown("### Current Simulation Distribution")
+    dist_info = get_distribution_info()
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Distribution", dist_info["name"])
+    with col2:
+        st.metric("Mean (μ)", f"{dist_info['mean']:.4f}")
+    with col3:
+        st.metric("Variance (σ²)", f"{dist_info['variance']:.4f}")
+
+
+def render_learn_comparison():
+    """Render Strong vs Weak LLN comparison."""
+    st.markdown("## Strong vs Weak Law of Large Numbers")
+
+    st.markdown("""
+    Both laws describe convergence, but they differ in the *type* of convergence
+    and what guarantees they provide.
+    """)
+
+    # Comparison table
+    st.markdown("### Comparison Table")
+    st.markdown("""
+    | Aspect | Strong LLN | Weak LLN |
+    |--------|-----------|----------|
+    | **Convergence Type** | Almost sure (a.s.) | In probability |
+    | **Mathematical Statement** | P(lim X̄ₙ = μ) = 1 | lim P(\\|X̄ₙ - μ\\| > ε) = 0 |
+    | **Interpretation** | Each sequence converges | Unlikely to be far from μ |
+    | **Strength** | Stronger (implies Weak) | Weaker |
+    | **Requirements** | Finite mean (weaker versions exist) | Finite variance |
+    | **Proof Technique** | Borel-Cantelli lemma | Chebyshev's inequality |
+    """)
+
+    # Strong LLN
+    with st.expander("Strong Law - Detailed", expanded=True):
+        st.markdown("### Strong Law of Large Numbers")
+
+        st.markdown("""
+        **Statement:** With probability 1, the sample mean converges to the true mean.
+        """)
+
+        st.latex(r"P\left(\lim_{n \to \infty} \bar{X}_n = \mu\right) = 1")
+
+        st.markdown("""
+        **What "almost surely" means:**
+        - Consider all possible infinite sequences of random outcomes
+        - The set of sequences where X̄ₙ doesn't converge to μ has probability 0
+        - For any single realization, convergence is guaranteed
+
+        **Visual interpretation:**
+        - In the Sample Paths tab, each colored line is one realization
+        - Every line converges to μ (the red dashed line)
+        - The "funnel" shape shows all paths concentrating around μ
+        """)
+
+    # Weak LLN
+    with st.expander("Weak Law - Detailed", expanded=True):
+        st.markdown("### Weak Law of Large Numbers")
+
+        st.markdown("""
+        **Statement:** The probability of deviating from μ by more than ε goes to zero.
+        """)
+
+        st.latex(r"\lim_{n \to \infty} P\left(|\bar{X}_n - \mu| > \varepsilon\right) = 0")
+
+        st.markdown("""
+        **What "convergence in probability" means:**
+        - Pick any tolerance ε > 0
+        - As n increases, the chance of exceeding this tolerance vanishes
+        - Doesn't guarantee any particular sequence converges
+
+        **Proven via Chebyshev's inequality:**
+        """)
+        st.latex(r"P(|\bar{X}_n - \mu| > \varepsilon) \leq \frac{\sigma^2}{n\varepsilon^2} \to 0")
+
+        st.markdown("""
+        **Visual interpretation:**
+        - In the Deviation Probability tab, see P(|X̄ₙ - μ| > ε) decay
+        - The Chebyshev bound (red dashed line) also decays
+        - Empirical probability typically decays faster than the bound
+        """)
+
+    # Key insight
+    st.info("""
+    **Key Insight:** The Strong LLN implies the Weak LLN, but not vice versa.
+
+    If every sequence converges (Strong), then certainly the probability of being
+    far from μ goes to zero (Weak). But sequences could have low probability of
+    large deviations without each individual sequence converging.
+    """)
+
+
+def render_learn_prerequisites():
+    """Render mathematical prerequisites content."""
+    st.markdown("## Mathematical Prerequisites")
+
+    st.markdown("""
+    To fully understand the LLN, it helps to be familiar with these concepts:
+    """)
+
+    with st.expander("Expected Value (Mean)", expanded=True):
+        st.markdown("### Expected Value")
+        st.markdown("""
+        The **expected value** E[X] is the long-run average of a random variable.
+        """)
+
+        st.markdown("**For discrete random variables:**")
+        st.latex(r"E[X] = \sum_{x} x \cdot P(X = x)")
+
+        st.markdown("**For continuous random variables:**")
+        st.latex(r"E[X] = \int_{-\infty}^{\infty} x \cdot f(x) \, dx")
+
+        st.markdown("**Properties:**")
+        st.markdown("- Linearity: E[aX + b] = a·E[X] + b")
+        st.markdown("- E[X + Y] = E[X] + E[Y] (always)")
+        st.markdown("- E[XY] = E[X]·E[Y] (if independent)")
+
+    with st.expander("Variance", expanded=True):
+        st.markdown("### Variance")
+        st.markdown("""
+        **Variance** measures the spread of a distribution around its mean.
+        """)
+
+        st.latex(r"\text{Var}(X) = E[(X - \mu)^2] = E[X^2] - (E[X])^2")
+
+        st.markdown("**Properties:**")
+        st.markdown("- Var(X) ≥ 0 always")
+        st.markdown("- Var(aX + b) = a²·Var(X)")
+        st.markdown("- Var(X + Y) = Var(X) + Var(Y) (if independent)")
+
+        st.markdown("**Standard deviation:**")
+        st.latex(r"\sigma = \sqrt{\text{Var}(X)}")
+
+    with st.expander("Independence", expanded=True):
+        st.markdown("### Independence")
+        st.markdown("""
+        Random variables X and Y are **independent** if knowing X tells you nothing about Y.
+        """)
+
+        st.markdown("**Formal definition:**")
+        st.latex(r"P(X \in A, Y \in B) = P(X \in A) \cdot P(Y \in B)")
+
+        st.markdown("**Consequences:**")
+        st.markdown("- E[XY] = E[X]·E[Y]")
+        st.markdown("- Var(X + Y) = Var(X) + Var(Y)")
+        st.markdown("- Covariance = 0")
+
+        st.markdown("""
+        **i.i.d. (independent and identically distributed):**
+        The LLN requires samples to be i.i.d. — each drawn independently from
+        the same distribution.
+        """)
+
+    with st.expander("Chebyshev's Inequality", expanded=True):
+        st.markdown("### Chebyshev's Inequality")
+        st.markdown("""
+        A fundamental bound on how far a random variable can deviate from its mean.
+        """)
+
+        st.latex(r"P(|X - \mu| \geq k\sigma) \leq \frac{1}{k^2}")
+
+        st.markdown("**Equivalent form:**")
+        st.latex(r"P(|X - \mu| > \varepsilon) \leq \frac{\text{Var}(X)}{\varepsilon^2}")
+
+        st.markdown("""
+        **Why it matters for LLN:**
+        - Provides the key tool for proving the Weak LLN
+        - Applied to X̄ₙ with Var(X̄ₙ) = σ²/n
+        - Bound decays as 1/n, proving convergence
+        """)
+
+
+def render_learn_formulas():
+    """Render key formulas reference."""
+    st.markdown("## Key Formulas Reference")
+
+    st.markdown("### Sample Mean")
+    st.latex(r"\bar{X}_n = \frac{1}{n}\sum_{i=1}^{n} X_i")
+
+    st.markdown("### Variance of Sample Mean")
+    st.latex(r"\text{Var}(\bar{X}_n) = \frac{\sigma^2}{n}")
+
+    st.markdown("### Standard Error")
+    st.latex(r"\text{SE}(\bar{X}_n) = \frac{\sigma}{\sqrt{n}}")
+
+    st.markdown("### Chebyshev Bound for Sample Mean")
+    st.latex(r"P(|\bar{X}_n - \mu| > \varepsilon) \leq \frac{\sigma^2}{n\varepsilon^2}")
+
+    st.divider()
+
+    st.markdown("### Strong Law of Large Numbers")
+    st.latex(r"P\left(\lim_{n \to \infty} \bar{X}_n = \mu\right) = 1")
+
+    st.markdown("### Weak Law of Large Numbers")
+    st.latex(r"\lim_{n \to \infty} P(|\bar{X}_n - \mu| > \varepsilon) = 0 \quad \forall \varepsilon > 0")
+
+    st.divider()
+
+    st.markdown("### Distribution Formulas")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown("**Normal(μ, σ²)**")
+        st.latex(r"E[X] = \mu")
+        st.latex(r"\text{Var}(X) = \sigma^2")
+
+    with col2:
+        st.markdown("**Bernoulli(p)**")
+        st.latex(r"E[X] = p")
+        st.latex(r"\text{Var}(X) = p(1-p)")
+
+    with col3:
+        st.markdown("**Uniform(a, b)**")
+        st.latex(r"E[X] = \frac{a+b}{2}")
+        st.latex(r"\text{Var}(X) = \frac{(b-a)^2}{12}")
+
+    st.divider()
+
+    # Quick reference card
+    st.markdown("### Quick Reference Card")
+    st.markdown("""
+    | Quantity | Formula | Description |
+    |----------|---------|-------------|
+    | Sample mean | X̄ₙ = (1/n)ΣXᵢ | Average of n observations |
+    | Var(X̄ₙ) | σ²/n | Variance decreases with n |
+    | SE(X̄ₙ) | σ/√n | Standard error |
+    | Chebyshev | P(\\|X̄ₙ-μ\\|>ε) ≤ σ²/(nε²) | Probability bound |
+    | To halve SE | Need 4× samples | Diminishing returns |
+    | To halve Var | Need 2× samples | Linear scaling |
+    """)
+
+
 def render_main_content():
     """Render main content area with visualizations."""
     st.title("LLN Explorer")
-    st.markdown("**Interactive Law of Large Numbers Visualization**")
+    st.markdown("**Interactive Law of Large Numbers Visualization & Learning Tool**")
 
     # Current configuration display
     dist_info = get_distribution_info()
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("Distribution", dist_info["name"])
     with col2:
-        st.metric("Theoretical Mean (μ)", f"{dist_info['mean']:.4f}")
+        st.metric("Mean (μ)", f"{dist_info['mean']:.4f}")
     with col3:
-        st.metric("Theoretical Variance (σ²)", f"{dist_info['variance']:.4f}")
+        st.metric("Variance (σ²)", f"{dist_info['variance']:.4f}")
     with col4:
-        st.metric("Sample Paths (M)", st.session_state.M)
+        st.metric("Paths (M)", st.session_state.M)
+    with col5:
+        st.metric("Max n (N)", f"{st.session_state.N:,}")
 
     st.divider()
 
-    # Visualization tabs
+    # Visualization tabs - 5 tabs including Dashboard and Learn
     if st.session_state.simulation_run:
-        tab1, tab2, tab3 = st.tabs(
-            ["Sample Paths (Strong LLN)", "Deviation Probability (Weak LLN)", "Variance Decay"]
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(
+            ["Dashboard", "Sample Paths", "Deviation Probability", "Variance Decay", "Learn"]
         )
 
         with tab1:
-            render_sample_paths_tab()
+            render_dashboard_tab()
 
         with tab2:
-            render_deviation_probability_tab()
+            render_sample_paths_tab()
 
         with tab3:
+            render_deviation_probability_tab()
+
+        with tab4:
             render_variance_decay_tab()
+
+        with tab5:
+            render_learn_tab()
 
         # Parameter summary
         with st.expander("Current Parameters", expanded=False):
@@ -990,31 +1531,54 @@ def render_main_content():
                 }
             )
     else:
-        st.info(
-            "Configure parameters in the sidebar and click **Run Simulation** to start."
-        )
+        # Show Learn tab even before simulation
+        tab_welcome, tab_learn = st.tabs(["Welcome", "Learn"])
 
-        # Welcome content
-        st.markdown(
+        with tab_welcome:
+            st.info(
+                "Configure parameters in the sidebar and click **Run Simulation** to start."
+            )
+
+            # Welcome content
+            st.markdown(
+                """
+            ### Welcome to LLN Explorer
+
+            This interactive tool helps you visualize and understand the **Law of Large Numbers**:
+
+            **Visualizations:**
+            - **Dashboard**: All three visualizations at a glance with summary statistics
+            - **Sample Paths**: See paths converging to μ (Strong LLN)
+            - **Deviation Probability**: Watch P(|X̄ₙ - μ| > ε) decay (Weak LLN)
+            - **Variance Decay**: Observe Var(X̄ₙ) = σ²/n
+
+            **Learning:**
+            - Explore the **Learn** tab for comprehensive educational content
+            - Distribution formulas, theorem statements, and prerequisites
+            - Available even before running a simulation!
+
+            **To get started:**
+            1. Select a probability distribution in the sidebar
+            2. Configure simulation parameters (M paths, N samples)
+            3. Click **Run Simulation** to generate visualizations
             """
-        ### Welcome to LLN Explorer
+            )
 
-        This interactive tool helps you visualize and understand the **Law of Large Numbers**:
+            # Quick start suggestions
+            st.markdown("### Quick Start Suggestions")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.markdown("**Try Normal**")
+                st.caption("Classic bell curve, μ=0, σ=1")
+            with col2:
+                st.markdown("**Try Bernoulli**")
+                st.caption("Coin flips, p=0.5")
+            with col3:
+                st.markdown("**Try Uniform**")
+                st.caption("Equal probability, [0,1]")
 
-        - **Strong LLN**: Sample paths converge almost surely to the mean
-        - **Weak LLN**: Deviation probability decays to zero
-        - **Variance Decay**: Sample mean variance decreases as σ²/n
-
-        Use the sidebar to configure:
-        1. Select a probability distribution
-        2. Set the number of sample paths (M)
-        3. Set the maximum sample size (N)
-        4. Adjust the epsilon threshold for deviation analysis
-        5. Configure distribution-specific parameters
-
-        Then click **Run Simulation** to generate visualizations.
-        """
-        )
+        with tab_learn:
+            render_learn_tab()
 
 
 def main():
