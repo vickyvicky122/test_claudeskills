@@ -172,6 +172,59 @@ def plot_sample_paths(running_avgs, mu, dist_name, output_dir):
     return output_path
 
 
+def plot_deviation_probability(deviation_prob, eps, dist_name, output_dir):
+    """Plot deviation probability showing Weak LLN (convergence in probability).
+
+    Args:
+        deviation_prob: Shape (N,) array of P(|X̄ₙ - μ| > ε) at each n
+        eps: Epsilon threshold used
+        dist_name: Name of the distribution
+        output_dir: Path object for output directory
+
+    Returns:
+        Path to saved figure
+    """
+    N = len(deviation_prob)
+    n_values = np.arange(1, N + 1)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Plot deviation probability curve
+    ax.plot(
+        n_values,
+        deviation_prob,
+        color="blue",
+        linewidth=1.5,
+        label=f"P(|X̄ₙ - μ| > {eps})",
+    )
+
+    # Configure axes
+    ax.set_xlabel("Sample size (n)", fontsize=12)
+    ax.set_ylabel("Deviation probability", fontsize=12)
+    ax.set_title(
+        f"Deviation Probability Decay - {dist_name.capitalize()} Distribution\n"
+        f"(ε = {eps}, Weak LLN)",
+        fontsize=14,
+    )
+    ax.legend(loc="upper right", fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    # Use log scale for x-axis to better show decay
+    ax.set_xscale("log")
+
+    # Set y-axis limits
+    ax.set_ylim(0, 1)
+
+    plt.tight_layout()
+
+    # Save figure
+    output_path = output_dir / f"{dist_name}_deviation.png"
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+    return output_path
+
+
 # =============================================================================
 # CLI Functions
 # =============================================================================
@@ -342,6 +395,10 @@ def main():
     print("Generating visualizations...")
     sample_paths_file = plot_sample_paths(running_avgs, mu, args.dist, output_dir)
     print(f"  Sample paths: {sample_paths_file.name}")
+    deviation_file = plot_deviation_probability(
+        deviation_prob, args.eps, args.dist, output_dir
+    )
+    print(f"  Deviation probability: {deviation_file.name}")
 
     sys.exit(EXIT_SUCCESS)
 
